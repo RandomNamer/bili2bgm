@@ -1,0 +1,25 @@
+node_modules/
+*.log
+
+# Personal data — never commit. These hold a real account's watch history,
+# ratings and short reviews (spec.md §6a.4). Not fixtures.
+# Note the `dir/*` + `!dir/.gitkeep` form: git cannot re-include a file whose
+# parent directory is itself excluded, so we ignore contents, not the dirs.
+data/*
+!data/.gitkeep
+out/*
+!out/.gitkeep
+cache/*
+!cache/search
+cache/search/*
+!cache/search/.gitkeep
+
+# Secrets. Tokens come from env or stdin only, never a file in the repo.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+
+# Machine-local Claude Code settings (scratchpad paths, per-machine permissions)
+.claude/settings.local.json

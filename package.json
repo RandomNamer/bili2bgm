@@ -1,0 +1,17 @@
+{
+  "name": "bili2bgm",
+  "version": "0.2.0",
+  "private": true,
+  "description": "One-shot migration of a Bilibili anime/cinema follow list into a bgm.tv collection",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "merge": "node .claude/skills/bili2bgm/scripts/phase1-merge.js",
+    "phase15": "node .claude/skills/bili2bgm/scripts/phase15-plan.js",
+    "apply": "node .claude/skills/bili2bgm/scripts/phase2-apply.js apply",
+    "verify": "node .claude/skills/bili2bgm/scripts/phase2-apply.js verify",
+    "plan": "node .claude/skills/bili2bgm/scripts/phase2-apply.js plan"
+  }
+}

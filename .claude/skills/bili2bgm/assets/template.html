@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bili2bgm — 核对与签字</title>
+<style>
+  :root {
+    --bg: #fff; --fg: #1a1a1a; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #ec4899; --warn: #b45309; --warn-bg: #fffbeb; --ok: #15803d;
+    --card: #fafafa; --ai: #7c3aed; --ai-bg: #f5f3ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa0aa; --line: #2a2f3a;
+      --accent: #f472b6; --warn: #fbbf24; --warn-bg: #2a2313; --ok: #4ade80;
+      --card: #161922; --ai: #a78bfa; --ai-bg: #1e1b2e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  /* The curve editor comes FIRST in source order: it is a global control that
+     decides every rating on the page, so it should be met before the tables,
+     and on a narrow screen it must not end up below them. Grid placement keeps
+     it on the right at desktop width regardless of that source order. */
+  .layout { max-width: 1500px; margin: 0 auto; display: grid; gap: 20px;
+    grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+  .main { grid-column: 1; grid-row: 1; min-width: 0; }
+  .side { grid-column: 2; grid-row: 1; }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .side { grid-column: 1; grid-row: 1; position: static !important; }
+    .main { grid-column: 1; grid-row: 2; }
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  .sub { color: var(--muted); margin-bottom: 16px; }
+  .bar { position: sticky; top: 0; z-index: 6; background: var(--bg);
+    border-bottom: 1px solid var(--line); padding: 10px 0; margin-bottom: 14px; }
+  .switches { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .switches label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .summary { margin-top: 6px; color: var(--muted); }
+  .summary b { color: var(--fg); }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 860px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--card); font-weight: 600; }
+  tr.excluded > td { opacity: .38; }
+  tr.detail > td { background: var(--card); }
+  .t { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12px; }
+  a { color: var(--accent); }
+  input[type=number] { width: 60px; padding: 2px 4px; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; }
+  input[type=text] { padding: 3px 6px; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; }
+  .comment { max-width: 300px; font-size: 12px; color: var(--muted); }
+  details { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .note { background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 9px 11px;
+    border-radius: 4px; margin: 10px 0; }
+  .cand { display: block; margin: 3px 0; }
+  textarea { width: 100%; height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; background: var(--card); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+    padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); }
+  .tag-ai { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 4px;
+    background: var(--ai-bg); color: var(--ai); border: 1px solid var(--ai); white-space: nowrap; }
+  .grouphead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 8px 0; }
+  details.group { margin-top: 16px; }
+  details.group > summary { font-size: 16px; display: flex; align-items: center;
+    gap: 10px; flex-wrap: wrap; }
+  .expander { cursor: pointer; user-select: none; color: var(--muted); font-size: 12px;
+    background: none; border: 0; padding: 0 2px; }
+  .side { position: sticky; top: 64px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; background: var(--card); }
+  .side h3 { margin: 0 0 4px; font-size: 14px; }
+  .band { display: grid; grid-template-columns: 52px 1fr 42px; gap: 8px; align-items: center; margin: 5px 0; }
+  .band input[type=range] { width: 100%; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="side">
+  <h3>评分映射</h3>
+  <div class="meta">B 站是 5 星制（存成 2/4/6/8/10）。下面决定每个星级写成 bgm 的几分，改动立刻套用到所有未手动改过的行。</div>
+  <div id="curve"></div>
+  <div class="meta" id="curve-usage" style="margin-top:8px"></div>
+  <button class="ghost" id="curve-reset" style="margin-top:8px">恢复默认（星级 ×2 − 2）</button>
+  <h3 style="margin-top:16px">进度</h3>
+  <div class="meta">只有<b>在看</b>的条目才会写分集进度；<b>看过</b>由 bgm 自己视为全集，<b>想看</b>没有进度可言。</div>
+  <div class="meta" id="ep-usage" style="margin-top:6px"></div>
+</aside>
+
+<div class="main">
+  <h1>bili2bgm — 核对与签字</h1>
+  <div class="sub">这一页不联网，也不持有 token。点 <b>导出</b> 复制 JSON，存成 <code>data/decisions.json</code> —— 那一步等于签字。</div>
+
+  <div class="bar">
+    <div class="switches">
+      <label><input type="checkbox" id="g-comments" checked> 发送短评</label>
+      <label><input type="checkbox" id="g-ratings" checked> 发送评分</label>
+      <label><input type="checkbox" id="g-tags" checked> 添加 <code>bilibili-import</code> 标签</label>
+      <label><input type="checkbox" id="g-private"> 设为私密收藏</label>
+    </div>
+    <div class="summary" id="summary"></div>
+  </div>
+
+  <div id="groups"></div>
+
+  <details id="attention-box">
+    <summary>需要确认 <span id="att-count" class="pill"></span> —— 匹配不确定，默认<b>不</b>写入</summary>
+    <div class="note">选中一个候选，或直接填入 <code>bgm.tv/subject/…</code> 里的数字 id，该行才会计入。</div>
+    <div id="attention"></div>
+  </details>
+
+  <details id="dup-box">
+    <summary>已在 bgm 收藏 <span id="dup-count" class="pill"></span> —— 只读，绝不改动</summary>
+    <div id="dups"></div>
+  </details>
+
+  <h2>导出</h2>
+  <button id="export">下载 decisions.json</button>
+  <span class="meta" id="export-hint" style="margin-left:10px"></span>
+  <div class="note" id="export-where" hidden>
+    文件已下载到<b>下载文件夹</b>。把它移到项目的 <code>data/decisions.json</code>，Phase 2 才读得到：
+    <div><code id="export-cmd"></code></div>
+  </div>
+  <details>
+    <summary style="font-weight:normal" class="meta">下载被拦截？点开手动复制</summary>
+    <textarea id="out" readonly placeholder="点上面的按钮后，这里也会有一份，可全选复制存为 data/decisions.json"></textarea>
+  </details>
+</div>
+
+</div>
+
+<script type="application/json" id="plan-data">/*__DATA__*/</script>
+<script>
+const PLAN = JSON.parse(document.getElementById('plan-data').textContent);
+const rows = PLAN.rows;
+const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+
+const STATUS_CN = { 1: '想看', 2: '看过', 3: '在看' };          // bgm_type
+const GROUP_ORDER = [3, 2, 1];                                  // 在看 first: it is the only group with progress
+const CONF_CN = { high: '较有把握', medium: '中等把握', low: '把握不大' };
+
+// 追剧 (live-action film and TV) is pulled out as one standalone group and is
+// OFF by default. It is a different matching problem, not merely a different
+// genre: those rows search bgm types [2,6], their bilibili date is usually the
+// Chinese release rather than the original premiere, and the title has been
+// through a separate licensing translation. On the run this page was built for
+// it failed to match 52% of the time versus 12% for 追番 — too unreliable to
+// write without someone having looked at it, so the user opts in deliberately.
+const CINEMA_TYPE = 2;
+
+// bilibili stores its 5-star widget as an even number, so a rating is really a
+// band index. The default reproduces the old formula (my_score - 2) exactly.
+const STARS = [1, 2, 3, 4, 5];
+const DEFAULT_CURVE = { 1: 1, 2: 2, 3: 4, 4: 6, 5: 8 };
+const bandOf = (myScore) => (Number.isFinite(myScore) && myScore > 0 ? Math.max(1, Math.min(5, Math.round(myScore / 2))) : null);
+
+const state = {
+  exclude: new Set(),          // rows in the main table the user opted OUT of
+  resolve: {},                 // unmatched row id -> subject id (opt IN)
+  rate_override: {},           // id -> rating the user typed by hand
+  exclude_comment: new Set(),  // comments are on by default; this is the opt-out
+  include_ep: new Set(),       // progress is off by default; this is the opt-in
+  ep_override: {},             // id -> hand-corrected episode number
+  curve: { ...DEFAULT_CURVE },
+  expanded: new Set(),
+  collapsed: new Set(),              // group ids the user folded away
+  sort: { key: null, dir: 'desc' },  // null = the plan's own order
+};
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const subjectLink = (id, label) => `<a href="https://bgm.tv/subject/${id}" target="_blank" rel="noopener">${esc(label)}</a>`;
+
+/** The rating that will actually be written: a hand edit wins over the curve. */
+function effectiveRate(r) {
+  if (state.rate_override[r.id] != null) return state.rate_override[r.id];
+  const band = bandOf(r.my_score);
+  return band == null ? null : state.curve[band];
+}
+/** The episode number that will be written, if this row's progress is opted in. */
+const effectiveEp = (r) => (state.ep_override[r.id] != null ? state.ep_override[r.id] : r.progress_ep);
+/** Progress is meaningful only while a series is in progress (bgm_type 3). */
+const hasProgress = (r) => r.bgm_type === 3;
+
+const writable = rows.filter(r => r.state === 'matched' || r.state === 'ai_matched');
+const attention = rows.filter(r => r.state === 'unmatched');
+const dups = rows.filter(r => r.state === 'reported');
+
+// 追剧 starts excluded. Done here rather than at render time so the very first
+// summary already tells the truth about what would be written.
+for (const r of writable) if (r.bili_type === CINEMA_TYPE) state.exclude.add(r.id);
+
+// ---- sorting -------------------------------------------------------------
+// A null means "this row has nothing here", which is not the same as scoring
+// zero — so nulls always sink to the bottom whichever way the column is
+// sorted. That is the actual job being asked of this control: get the empty
+// rows out of the way so the ones worth looking at sit together at the top.
+const SORT_KEYS = {
+  rate: { label: '评分', value: (r) => effectiveRate(r) },
+  comment: { label: '短评', value: (r) => (r.my_review ? r.my_review.length : null) },
+  progress: { label: '进度', value: (r) => (hasProgress(r) ? effectiveEp(r) : null) },
+};
+
+function sortRows(list) {
+  const { key, dir } = state.sort;
+  if (!key) return list;
+  const val = SORT_KEYS[key].value;
+  const sign = dir === 'asc' ? 1 : -1;
+  // Carry the original index so equal values keep the plan's order instead of
+  // reshuffling on every re-render.
+  return list
+    .map((r, i) => ({ r, i, v: val(r) }))
+    .sort((a, b) => {
+      const an = a.v == null, bn = b.v == null;
+      if (an && bn) return a.i - b.i;
+      if (an) return 1;
+      if (bn) return -1;
+      return a.v === b.v ? a.i - b.i : (a.v - b.v) * sign;
+    })
+    .map((d) => d.r);
+}
+
+function sortableTh(key, width) {
+  const on = state.sort.key === key;
+  const arrow = on ? (state.sort.dir === 'asc' ? '▲' : '▼') : '↕';
+  return `<th${width ? ` style="width:${width}"` : ''}><button class="expander" data-sort="${key}"
+    style="font-weight:600;color:${on ? 'var(--accent)' : 'inherit'}"
+    title="按${SORT_KEYS[key].label}排序，空值永远排在最后">${SORT_KEYS[key].label} ${arrow}</button></th>`;
+}
+
+// ---- main tables ---------------------------------------------------------
+// 追番 is split by target status, because the three behave differently: 在看 is
+// the only one that can carry progress, and 想看 has neither rating nor review.
+// Splitting also makes select-all meaningful — "everything I finished" is a
+// decision someone actually wants to make in one click. 追剧 is one group
+// regardless of status, so it carries its own status column.
+function groupDefs() {
+  const defs = [];
+  for (const t of GROUP_ORDER) {
+    const g = writable.filter(r => r.bili_type !== CINEMA_TYPE && r.bgm_type === t);
+    if (g.length) defs.push({ id: `anime-${t}`, label: STATUS_CN[t], rows: g, showStatus: false, showProgress: t === 3 });
+  }
+  const cinema = writable.filter(r => r.bili_type === CINEMA_TYPE);
+  if (cinema.length) {
+    defs.push({
+      id: 'cinema', label: '追剧（影视）', rows: cinema, showStatus: true,
+      showProgress: cinema.some(hasProgress),
+      note: '影视匹配远不如动画可靠（本次 52% 未能匹配，动画只有 12%），所以<b>默认全部不写入</b>。请逐条核对后再勾选。',
+    });
+  }
+  return defs;
+}
+
+function rowHtml(r, def) {
+  const rate = effectiveRate(r);
+  const manual = state.rate_override[r.id] != null;
+  const ep = effectiveEp(r);
+  return `
+  <tr data-id="${r.id}" class="${state.exclude.has(r.id) ? 'excluded' : ''}">
+    <td><input type="checkbox" class="inc" data-id="${r.id}" ${state.exclude.has(r.id) ? '' : 'checked'}></td>
+    <td>
+      <button class="expander" data-expand="${r.id}">${state.expanded.has(r.id) ? '▾' : '▸'}</button>
+      <span class="t">${esc(r.title)}</span>
+      ${r.state === 'ai_matched' ? ' <span class="tag-ai">AI 匹配</span>' : ''}
+      <div class="meta">${esc(r.season_title || '')} ${r.air_date ? '· ' + esc(r.air_date) : ''}</div>
+    </td>
+    <td>${r.subject ? subjectLink(r.subject.id, r.subject.name_cn || r.subject.name) : '—'}
+        <div class="meta">${r.subject ? esc(r.subject.date || '') : ''}</div></td>
+    ${def.showStatus ? `<td>${STATUS_CN[r.bgm_type] || r.bgm_type}</td>` : ''}
+    <td>${rate != null
+          ? `<input type="number" class="rate" data-id="${r.id}" min="1" max="10" value="${rate}">
+             <div class="meta" data-ratemeta="${r.id}">${'★'.repeat(bandOf(r.my_score))}${manual ? ' · 手改' : ''}</div>`
+          : '<span class="meta">未评分</span>'}</td>
+    <td>${r.my_review
+          ? `<label class="meta"><input type="checkbox" class="cmt" data-id="${r.id}" ${state.exclude_comment.has(r.id) ? '' : 'checked'}> 发送</label>
+             <div class="comment">${esc(r.my_review.slice(0, 120))}${r.my_review.length > 120 ? '…' : ''}</div>`
+          : '<span class="meta">无</span>'}</td>
+    ${def.showProgress ? `<td>${
+        !hasProgress(r)
+          ? '<span class="meta">—</span>'
+          : ep != null || r.progress_raw
+            ? `<label class="meta"><input type="checkbox" class="ep" data-id="${r.id}" ${state.include_ep.has(r.id) ? 'checked' : ''}> 发送</label>
+               <div><input type="number" class="epnum" data-id="${r.id}" min="0" max="9999" value="${ep != null ? ep : ''}" placeholder="?"></div>
+               <div class="meta">${esc(r.progress_raw || '无原文')}</div>`
+            : '<span class="meta">无进度</span>'}</td>` : ''}
+  </tr>
+  ${state.expanded.has(r.id) ? detailHtml(r, def) : ''}`;
+}
+
+// The detail panel exists so a decision can be checked without leaving the
+// page: bilibili's raw progress string next to the parsed number, and bgm's
+// episode count next to it, is exactly what tells you whether "看到第10话"
+// means episode 10 of 12 or episode 10 of a 4-episode OVA.
+function detailHtml(r, def) {
+  const s = r.subject;
+  // Five fixed columns — 写入, 标题, bgm 条目, 评分, 短评 — plus the two the
+  // group may add. Undercounting here silently leaves the panel short of the
+  // table's right edge.
+  const span = 5 + (def.showStatus ? 1 : 0) + (def.showProgress ? 1 : 0);
+  const eps = s ? (s.eps || s.total_episodes) : null;
+  return `<tr class="detail" data-detail="${r.id}"><td colspan="${span}">
+    <dl class="kv">
+      <dt>B 站原始进度</dt><dd>${r.progress_raw ? `<code>${esc(r.progress_raw)}</code>` : '<span class="meta">无</span>'}
+        ${r.progress_ep != null ? ` → 解析为第 <b>${r.progress_ep}</b> 集` : ' <span class="meta">（未能解析）</span>'}
+        ${!hasProgress(r) ? ' <span class="meta">· 非“在看”，不会写进度</span>' : ''}</dd>
+      <dt>B 站总集数</dt><dd>${r.formal_ep_count != null ? r.formal_ep_count : '<span class="meta">未知</span>'}</dd>
+      <dt>bgm 集数</dt><dd>${eps ? `${eps} 集` : '<span class="meta">未知</span>'}${s && s.platform ? ` <span class="meta">· ${esc(s.platform)}</span>` : ''}</dd>
+      <dt>B 站评分</dt><dd>${r.my_score != null ? `${r.my_score}/10 = ${'★'.repeat(bandOf(r.my_score))} → bgm <b>${effectiveRate(r) ?? '—'}</b>` : '<span class="meta">未评分</span>'}</dd>
+      <dt>判定依据</dt><dd>${esc(r.reason)}</dd>
+      ${r.my_review ? `<dt>短评全文</dt><dd>${esc(r.my_review)}</dd>` : ''}
+      ${s && s.summary ? `<dt>bgm 简介</dt><dd class="meta">${esc(s.summary)}…</dd>` : ''}
+      ${r.url ? `<dt>B 站页面</dt><dd><a href="${esc(r.url)}" target="_blank" rel="noopener">打开</a></dd>` : ''}
+    </dl></td></tr>`;
+}
+
+function renderGroups() {
+  document.getElementById('groups').innerHTML = groupDefs().map(def => {
+    const on = def.rows.filter(r => !state.exclude.has(r.id)).length;
+    const ai = def.rows.filter(r => r.state === 'ai_matched').length;
+    // Every group collapses the same way the 需要确认 / 已收藏 sections do, so
+    // the page has one idiom throughout. Open state is kept in `state` rather
+    // than left to the DOM, because these get re-rendered constantly and would
+    // otherwise spring back open on every checkbox click. The select-all
+    // buttons sit outside <summary>; inside it, clicking them would toggle the
+    // section instead of selecting anything.
+    const open = !state.collapsed.has(def.id);
+    return `
+      <details class="group" ${open ? 'open' : ''} data-group="${def.id}">
+        <summary>
+          ${def.label}
+          <span class="pill">${on} / ${def.rows.length} 写入</span>
+          ${ai ? `<span class="tag-ai">${ai} 行 AI 匹配</span>` : ''}
+        </summary>
+        <div class="grouphead">
+          <button class="ghost" data-all="${def.id}" data-on="1">全选</button>
+          <button class="ghost" data-all="${def.id}" data-on="0">全不选</button>
+        </div>
+        ${def.note ? `<div class="note">${def.note}</div>` : ''}
+        <div class="scroll"><table><thead><tr>
+        <th style="width:44px">写入</th><th>B 站标题</th><th>bgm 条目</th>
+        ${def.showStatus ? '<th style="width:56px">状态</th>' : ''}
+        ${sortableTh('rate', '110px')}
+        ${sortableTh('comment')}
+        ${def.showProgress ? sortableTh('progress', '150px') : ''}
+        </tr></thead><tbody>${sortRows(def.rows).map(r => rowHtml(r, def)).join('')}</tbody></table></div>
+      </details>`;
+  }).join('');
+}
+
+// ---- unmatched -----------------------------------------------------------
+// Nothing here is ever pre-selected. Every high-confidence second-pass match
+// was already promoted to ai_matched and sits in the main table, so a
+// suggestion surviving into this section is medium confidence or outright
+// unsure — exactly the cases that must not be auto-included.
+document.getElementById('att-count').textContent = attention.length;
+document.getElementById('attention').innerHTML = attention.slice().sort((a, b) => (a.bili_type === CINEMA_TYPE) - (b.bili_type === CINEMA_TYPE)).map(r => `
+  <div style="border-top:1px solid var(--line);padding:10px 0">
+    <div class="t">${esc(r.title)}
+      ${r.bili_type === CINEMA_TYPE ? '<span class="pill">影视</span>' : ''}
+      <span class="meta">${esc(r.season_title || '')} ${r.air_date ? '· ' + esc(r.air_date) : ''}</span></div>
+    <div class="meta">${esc(r.reason)}</div>
+    ${r.suggestion ? `<div class="note" style="margin:6px 0">复核建议（${esc(CONF_CN[r.suggestion.confidence] || r.suggestion.confidence)}，<b>把握不足，未预选</b>）：下方标出的候选仅供参考，需要你自己判断。<br><span class="meta">${esc(r.suggestion.reason)}</span></div>` : ''}
+    ${r.candidates.map(c => `
+      <label class="cand"><input type="radio" name="res-${r.id}" class="res" data-id="${r.id}" value="${c.id}">
+        ${subjectLink(c.id, c.name_cn || c.name)}
+        <span class="meta">${esc(c.date || '')}${c.eps || c.total_episodes ? ' · ' + (c.eps || c.total_episodes) + ' 集' : ''} · 相似度 ${c.score}</span>
+        ${r.suggestion && r.suggestion.subject_id === c.id ? ' <span class="tag-ai">复核建议</span>' : ''}</label>`).join('')}
+    <label class="cand"><input type="radio" name="res-${r.id}" class="res" data-id="${r.id}" value="" checked>
+      不写入这一行</label>
+    <label class="cand meta">或手填 subject id：
+      <input type="text" class="manual" data-id="${r.id}" size="10" placeholder="454684"></label>
+  </div>`).join('') || '<div class="meta">没有需要确认的行。</div>';
+
+// ---- already collected ---------------------------------------------------
+document.getElementById('dup-count').textContent = dups.length;
+document.getElementById('dups').innerHTML = PLAN.dedup_performed
+  ? (dups.map(r => `<div style="padding:4px 0">${esc(r.title)} → ${r.subject ? subjectLink(r.subject.id, r.subject.name_cn || r.subject.name) : ''}
+      <span class="meta">bgm 现状态 ${r.existing && r.existing.type != null ? STATUS_CN[r.existing.type] || r.existing.type : '?'}${r.existing && r.existing.rate ? ' · ' + r.existing.rate + ' 分' : ''}</span></div>`).join('')
+     || '<div class="meta">没有重复条目。</div>')
+  : '<div class="note">没有提供 bgm 用户名，未做查重。Phase 2 写入前仍会逐条复查，不会覆盖已有收藏。</div>';
+
+// ---- curve editor --------------------------------------------------------
+// Built once. Redrawing this panel's innerHTML on every event would replace the
+// range input the user is currently dragging with a fresh node, and the drag
+// would die under the cursor — so updates only ever touch the labels.
+const bandCounts = {};
+for (const r of writable) { const b = bandOf(r.my_score); if (b) bandCounts[b] = (bandCounts[b] || 0) + 1; }
+document.getElementById('curve').innerHTML = STARS.map(b => `
+  <div class="band">
+    <span class="meta">${'★'.repeat(b)}</span>
+    <input type="range" class="curve" data-band="${b}" min="1" max="10" step="1" value="${state.curve[b]}">
+    <span><b data-curveval="${b}">${state.curve[b]}</b> <span class="meta">(${bandCounts[b] || 0})</span></span>
+  </div>`).join('');
+
+/**
+ * Push the curve into the rating fields without rebuilding the tables. Moving a
+ * slider must not re-render 194 rows on every pixel of the drag, and must not
+ * yank focus out of a field someone is typing in.
+ */
+function updateRates() {
+  for (const input of document.querySelectorAll('input.rate')) {
+    const r = byId[input.dataset.id];
+    const eff = effectiveRate(r);
+    if (eff != null && Number(input.value) !== eff) input.value = eff;
+    const meta = document.querySelector(`[data-ratemeta="${r.id}"]`);
+    if (meta) meta.textContent = '★'.repeat(bandOf(r.my_score)) + (state.rate_override[r.id] != null ? ' · 手改' : '');
+  }
+}
+
+function renderCurve() {
+  for (const b of STARS) {
+    document.querySelector(`[data-curveval="${b}"]`).textContent = state.curve[b];
+    const slider = document.querySelector(`input.curve[data-band="${b}"]`);
+    if (Number(slider.value) !== state.curve[b]) slider.value = state.curve[b];
+  }
+  const manual = Object.keys(state.rate_override).length;
+  document.getElementById('curve-usage').textContent =
+    manual ? `${manual} 行已手动改分，不受滑块影响。` : '括号内是该星级的条目数。';
+}
+
+// ---- wiring --------------------------------------------------------------
+function toggleSet(set, id, on) { on ? set.add(id) : set.delete(id); }
+
+document.addEventListener('change', (e) => {
+  const t = e.target, id = t.dataset.id;
+  if (t.classList.contains('inc')) {
+    toggleSet(state.exclude, id, !t.checked);
+    renderGroups();
+  } else if (t.classList.contains('cmt')) {
+    toggleSet(state.exclude_comment, id, !t.checked);
+  } else if (t.classList.contains('ep')) {
+    toggleSet(state.include_ep, id, t.checked);
+  } else if (t.classList.contains('epnum')) {
+    const v = Number(t.value);
+    if (Number.isFinite(v) && v >= 0 && v !== byId[id].progress_ep) state.ep_override[id] = v;
+    else delete state.ep_override[id];
+  } else if (t.classList.contains('rate')) {
+    const v = Number(t.value);
+    const band = bandOf(byId[id].my_score);
+    // Only remember a hand edit that actually departs from the curve, so that
+    // moving a slider afterwards still picks this row up.
+    if (Number.isFinite(v) && v >= 1 && v <= 10 && v !== state.curve[band]) state.rate_override[id] = v;
+    else delete state.rate_override[id];
+    renderCurve(); updateRates();
+  } else if (t.classList.contains('curve')) {
+    state.curve[t.dataset.band] = Number(t.value);
+    renderCurve(); updateRates();
+  } else if (t.classList.contains('res')) {
+    if (t.value) state.resolve[id] = Number(t.value); else delete state.resolve[id];
+  } else if (t.classList.contains('manual')) {
+    const v = Number(t.value.trim());
+    if (Number.isFinite(v) && v > 0) {
+      state.resolve[id] = v;
+      document.querySelectorAll(`input.res[data-id="${id}"]`).forEach(r => { r.checked = false; });
+    } else delete state.resolve[id];
+  }
+  render();
+});
+
+// Live feedback while dragging. Same in-place update as `change`, so the drag
+// survives and the numbers track the slider.
+document.addEventListener('input', (e) => {
+  if (e.target.classList.contains('curve')) {
+    state.curve[e.target.dataset.band] = Number(e.target.value);
+    renderCurve(); updateRates(); render();
+  }
+});
+
+// <details> fires `toggle`, which does not bubble — capture it so a folded
+// group survives the next re-render instead of springing back open.
+document.addEventListener('toggle', (e) => {
+  const g = e.target.dataset && e.target.dataset.group;
+  if (g) toggleSet(state.collapsed, g, !e.target.open);
+}, true);
+
+document.addEventListener('click', (e) => {
+  const exp = e.target.dataset && e.target.dataset.expand;
+  if (exp) { toggleSet(state.expanded, exp, !state.expanded.has(exp)); renderGroups(); return; }
+  const sortKey = e.target.dataset && e.target.dataset.sort;
+  if (sortKey) {
+    // Same column toggles direction; a new column starts descending, which is
+    // what puts the rows that actually have a value at the top.
+    state.sort = state.sort.key === sortKey
+      ? { key: sortKey, dir: state.sort.dir === 'desc' ? 'asc' : 'desc' }
+      : { key: sortKey, dir: 'desc' };
+    renderGroups(); return;
+  }
+  const all = e.target.dataset && e.target.dataset.all;
+  if (all) {
+    const on = e.target.dataset.on === '1';
+    const def = groupDefs().find(d => d.id === all);
+    if (def) for (const r of def.rows) toggleSet(state.exclude, r.id, !on);
+    renderGroups(); render(); return;
+  }
+  if (e.target.id === 'curve-reset') { state.curve = { ...DEFAULT_CURVE }; renderCurve(); updateRates(); render(); }
+});
+
+function render() {
+  const g = {
+    comments: document.getElementById('g-comments').checked,
+    ratings: document.getElementById('g-ratings').checked,
+    tags: document.getElementById('g-tags').checked,
+    private: document.getElementById('g-private').checked,
+  };
+  // Count over every row that will actually be written — the matched ones the
+  // user kept AND the unmatched rows they resolved by hand.
+  const willWrite = [
+    ...writable.filter(r => !state.exclude.has(r.id)),
+    ...attention.filter(r => state.resolve[r.id] != null),
+  ];
+  const ratings = g.ratings ? willWrite.filter(r => effectiveRate(r) != null).length : 0;
+  const comments = g.comments ? willWrite.filter(r => r.my_review && !state.exclude_comment.has(r.id)).length : 0;
+  const eps = willWrite.filter(r => hasProgress(r) && state.include_ep.has(r.id) && effectiveEp(r) != null).length;
+  const ai = willWrite.filter(r => r.state === 'ai_matched').length;
+  document.getElementById('summary').innerHTML =
+    `将写入 <b>${willWrite.length}</b> 个条目 · <b>${ratings}</b> 个评分 · <b>${comments}</b> 条短评 · <b>${eps}</b> 行进度` +
+    (ai ? ` <span class="meta">（含 <b>${ai}</b> 行 AI 匹配，已标出，建议过目）</span>` : '') +
+    ` <span class="meta">（共 ${PLAN.counts.total} 行，${PLAN.counts.reported} 行已收藏不动）</span>`;
+  document.getElementById('ep-usage').textContent =
+    `在看 ${writable.filter(r => hasProgress(r)).length} 行，已勾选发送 ${eps} 行。`;
+  return g;
+}
+
+function buildDecisions() {
+  const g = render();
+  // Bake the curve into rate_override for every row that will be written, so
+  // Phase 2 reads one number per row and never reimplements this mapping.
+  const rate_override = { ...state.rate_override };
+  for (const r of writable.concat(attention)) {
+    const eff = effectiveRate(r);
+    if (eff != null && eff !== r.curved_rate) rate_override[r.id] = eff;
+  }
+  return {
+    schema_version: 5,
+    exclude: [...state.exclude],
+    resolve: state.resolve,
+    rate_override,
+    exclude_comment: [...state.exclude_comment],
+    include_ep: [...state.include_ep].filter(id => hasProgress(byId[id]) && effectiveEp(byId[id]) != null),
+    ep_override: state.ep_override,
+    curve: state.curve,
+    global: g,
+  };
+}
+
+// A download rather than a copy-paste: this page is opened from disk, and the
+// browser will always let a page save a Blob it built itself. The textarea
+// stays as a fallback for the case where the download is blocked, so there is
+// never a state where the decisions cannot be got out of the page.
+document.getElementById('export').addEventListener('click', () => {
+  const json = JSON.stringify(buildDecisions(), null, 2);
+  document.getElementById('out').value = json;
+
+  const hint = document.getElementById('export-hint');
+  try {
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'decisions.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    hint.textContent = '已下载 decisions.json';
+    document.getElementById('export-cmd').textContent = 'mv ~/Downloads/decisions.json data/decisions.json';
+    document.getElementById('export-where').hidden = false;
+  } catch (e) {
+    hint.textContent = '下载失败，请点开下方手动复制';
+  }
+});
+
+renderCurve();
+renderGroups();
+render();
+</script>
+</body>
+</html>
